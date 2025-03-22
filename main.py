@@ -1,21 +1,61 @@
 from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
 from astrbot.api.star import Context, Star, register
 from astrbot.api import logger
+from astrbot.api import AstrBotConfig
+import requests
+import feedparser
+from datetime import datetime
 
-@register("helloworld", "YourName", "一个简单的 Hello World 插件", "1.0.0")
+
+@register("wechat-rss", "HakimYu", "公众号文章推送 插件", "1.0.0")
 class MyPlugin(Star):
-    def __init__(self, context: Context):
+    def __init__(self, context: Context,config: AstrBotConfig):
         super().__init__(context)
-    
-    # 注册指令的装饰器。指令名为 helloworld。注册成功后，发送 `/helloworld` 就会触发这个指令，并回复 `你好, {user_name}!`
-    @filter.command("helloworld")
-    async def helloworld(self, event: AstrMessageEvent):
-        '''这是一个 hello world 指令''' # 这是 handler 的描述，将会被解析方便用户了解插件内容。建议填写。
-        user_name = event.get_sender_name()
-        message_str = event.message_str # 用户发的纯文本消息字符串
-        message_chain = event.get_messages() # 用户所发的消息的消息链 # from astrbot.api.message_components import *
-        logger.info(message_chain)
-        yield event.plain_result(f"Hello, {user_name}, 你发了 {message_str}!") # 发送一条纯文本消息
+        self.config = config
 
-    async def terminate(self):
-        '''可选择实现 terminate 函数，当插件被卸载/停用时会调用。'''
+    @filter.command("getWechatRss")
+    async def getWechatRss(self, event: AstrMessageEvent):
+        '''获取公众号文章推送指令'''
+        response = requests.get(self.config.rss_url)
+
+        if response.status_code != 200:
+            yield event.plain_result("获取RSS内容失败")
+            return
+
+        try:
+            feed = feedparser.parse(response.text)
+
+            # 获取Feed基本信息
+            feed_title = feed.feed.get('title', '未知')
+            feed_updated = feed.feed.get('updated', '未知时间')
+
+            result = f"📰 {feed_title}\n"
+            result += f"更新时间: {feed_updated}\n"
+            result += "=" * 30 + "\n\n"
+
+            for entry in feed.entries[:5]:  # 获取最新的5篇文章
+                # 获取文章标题（去除CDATA标记）
+                title = entry.title.replace('<![CDATA[', '').replace(
+                    ']]>', '') if hasattr(entry, 'title') else '无标题'
+
+                # 获取作者信息
+                author = entry.author if hasattr(entry, 'author') else '未知作者'
+
+                # 获取发布时间
+                published = entry.updated if hasattr(
+                    entry, 'updated') else '未知时间'
+
+                # 获取链接
+                link = entry.link if hasattr(entry, 'link') else '#'
+
+                result += f"📝 {title}\n"
+                result += f"✍️ 作者: {author}\n"
+                result += f"🕒 时间: {published}\n"
+                result += f"🔗 链接: {link}\n"
+                result += "-------------------\n"
+
+            yield event.plain_result(result)
+
+        except Exception as e:
+            logger.error(f"解析RSS失败: {str(e)}")
+            yield event.plain_result("解析RSS内容出错")

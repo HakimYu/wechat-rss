@@ -1,0 +1,8 @@
+{
+    "rss_url": {
+        "description": "RSS链接",
+        "type": "string",
+        "hint": "URL",
+        "obvious_hint": true
+    }
+}
